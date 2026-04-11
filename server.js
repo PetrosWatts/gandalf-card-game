@@ -82,6 +82,7 @@ function playerView(room, viewerIdx) {
     players,
     topDiscard: getTopDiscard(room),
     deckCount: room.deck.length,
+    discardCount: room.discardPile.length,
     currentPlayerIndex: room.currentPlayerIndex,
     phase: room.phase,
     turnPhase: room.turnPhase,
@@ -349,10 +350,9 @@ io.on('connection', (socket) => {
     // Privately tell the player what their new card is (they placed it, so they know)
     socket.emit('card-knowledge', { cardId: newCard.id, suit: newCard.suit, rank: newCard.rank });
 
-    const isQueen = room.drawnCard.rank === 'Q';
     room.drawnCard = null;
     room.message = `${player.name} replaced a card`;
-    advanceTurn(room, isQueen);
+    advanceTurn(room, false);
   });
 
   socket.on('discard-drawn', () => {
@@ -370,9 +370,8 @@ io.on('connection', (socket) => {
       type: 'info',
     });
 
-    const isQueen = card.rank === 'Q';
     room.drawnCard = null;
-    advanceTurn(room, isQueen);
+    advanceTurn(room, false);
   });
 
   socket.on('use-peek-self', () => {
@@ -445,9 +444,8 @@ io.on('connection', (socket) => {
       type: 'info',
     });
 
-    const isQueen = drawnCard.rank === 'Q';
     room.drawnCard = null;
-    advanceTurn(room, isQueen);
+    advanceTurn(room, false);
   });
 
   socket.on('switch-cards', ({ p1, c1, p2, c2 }) => {
@@ -579,15 +577,83 @@ io.on('connection', (socket) => {
     advanceTurn(room, false);
   });
 
+  socket.on('use-skip-next', () => {
+    const room = rooms.get(socket.roomCode);
+    if (!room || room.phase !== 'playing') return;
+    if (room.currentPlayerIndex !== socket.playerIndex) return;
+    if (room.turnPhase !== 'drawn' || !room.drawnCard) return;
+    if (room.drawnCard.rank !== 'Q') return;
+
+    const card = room.drawnCard;
+    card.faceUp = true;
+    room.discardPile.push(card);
+
+    io.to(room.code).emit('notification', {
+      message: `${room.players[socket.playerIndex].name} used Q — next player is skipped!`,
+      type: 'warning',
+    });
+
+    room.drawnCard = null;
+    advanceTurn(room, true);
+  });
+
+  socket.on('use-draw-again', () => {
+    const room = rooms.get(socket.roomCode);
+    if (!room || room.phase !== 'playing') return;
+    if (room.currentPlayerIndex !== socket.playerIndex) return;
+    if (room.turnPhase !== 'drawn' || !room.drawnCard) return;
+    if (room.drawnCard.rank !== 'K') return;
+
+    const oldCard = room.drawnCard;
+    oldCard.faceUp = true;
+    room.discardPile.push(oldCard);
+
+    io.to(room.code).emit('notification', {
+      message: `${room.players[socket.playerIndex].name} used K — drawing again!`,
+      type: 'info',
+    });
+
+    const newCard = drawFromDeck(room);
+    if (!newCard) {
+      room.drawnCard = null;
+      advanceTurn(room, false);
+      return;
+    }
+
+    room.drawnCard = newCard;
+    room.turnPhase = 'drawn';
+    room.message = `${room.players[socket.playerIndex].name} drew again`;
+    if (room.timerDuration > 0) startTurnTimer(room);
+    broadcastState(room);
+  });
+
+  socket.on('tack-select', ({ playerIndex, cardIndex }) => {
+    const room = rooms.get(socket.roomCode);
+    if (!room || room.phase !== 'playing') return;
+    if (room.currentPlayerIndex !== socket.playerIndex) return;
+
+    io.to(room.code).emit('tack-glow', {
+      playerIndex,
+      cardIndex,
+      tackerIndex: socket.playerIndex,
+    });
+  });
+
   socket.on('call-gandalf', () => {
     const room = rooms.get(socket.roomCode);
     if (!room || room.phase !== 'playing') return;
     if (room.currentPlayerIndex !== socket.playerIndex) return;
     if (room.turnPhase !== 'choose-action') return;
-    if (room.gandalfCallerIndex !== null) return; // Already called
+    if (room.gandalfCallerIndex !== null) return;
 
     room.gandalfCallerIndex = socket.playerIndex;
-    room.message = `${room.players[socket.playerIndex].name} called GANDALF! One more round!`;
+    room.message = `${room.players[socket.playerIndex].name} called GANDALF! Final round!`;
+
+    io.to(room.code).emit('gandalf-called', {
+      callerIndex: socket.playerIndex,
+      callerName: room.players[socket.playerIndex].name,
+    });
+
     io.to(room.code).emit('notification', {
       message: room.message,
       type: 'gandalf',

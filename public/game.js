@@ -5,15 +5,29 @@ const state = {
   playerIndex: -1,
   roomCode: null,
   gameState: null,
-  tackSelection: [],    // [{playerIndex, cardIndex}]
+  tackSelection: [],
   switchSelection: [],
-  mode: 'lobby',        // lobby | game
+  mode: 'lobby',
   turnDeadline: null,
   timerInterval: null,
 };
 
 const SUIT_SYMBOLS = { hearts: '\u2665', diamonds: '\u2666', clubs: '\u2663', spades: '\u2660' };
 const SUIT_COLORS = { hearts: 'red', diamonds: 'red', clubs: 'black', spades: 'black' };
+
+// --- Pip layouts: {x%, y%, rot (upside down)} ---
+const PIP_LAYOUTS = {
+  'A': [{ x: 50, y: 50, size: 'large' }],
+  '2': [{ x: 50, y: 16 }, { x: 50, y: 84, rot: true }],
+  '3': [{ x: 50, y: 16 }, { x: 50, y: 50 }, { x: 50, y: 84, rot: true }],
+  '4': [{ x: 30, y: 16 }, { x: 70, y: 16 }, { x: 30, y: 84, rot: true }, { x: 70, y: 84, rot: true }],
+  '5': [{ x: 30, y: 16 }, { x: 70, y: 16 }, { x: 50, y: 50 }, { x: 30, y: 84, rot: true }, { x: 70, y: 84, rot: true }],
+  '6': [{ x: 30, y: 16 }, { x: 70, y: 16 }, { x: 30, y: 50 }, { x: 70, y: 50 }, { x: 30, y: 84, rot: true }, { x: 70, y: 84, rot: true }],
+  '7': [{ x: 30, y: 16 }, { x: 70, y: 16 }, { x: 50, y: 33 }, { x: 30, y: 50 }, { x: 70, y: 50 }, { x: 30, y: 84, rot: true }, { x: 70, y: 84, rot: true }],
+  '8': [{ x: 30, y: 16 }, { x: 70, y: 16 }, { x: 50, y: 33 }, { x: 30, y: 50 }, { x: 70, y: 50 }, { x: 50, y: 67, rot: true }, { x: 30, y: 84, rot: true }, { x: 70, y: 84, rot: true }],
+  '9': [{ x: 30, y: 16 }, { x: 70, y: 16 }, { x: 30, y: 38 }, { x: 70, y: 38 }, { x: 50, y: 50 }, { x: 30, y: 62, rot: true }, { x: 70, y: 62, rot: true }, { x: 30, y: 84, rot: true }, { x: 70, y: 84, rot: true }],
+  '10': [{ x: 30, y: 16 }, { x: 70, y: 16 }, { x: 50, y: 27 }, { x: 30, y: 38 }, { x: 70, y: 38 }, { x: 30, y: 62, rot: true }, { x: 70, y: 62, rot: true }, { x: 50, y: 73, rot: true }, { x: 30, y: 84, rot: true }, { x: 70, y: 84, rot: true }],
+};
 
 // --- DOM refs ---
 const $ = (sel) => document.querySelector(sel);
@@ -23,28 +37,55 @@ const $$ = (sel) => document.querySelectorAll(sel);
 function cardFaceHTML(suit, rank, extraClass = '') {
   const sym = SUIT_SYMBOLS[suit];
   const color = SUIT_COLORS[suit];
+  const isTen = rank === '10';
+  const cornerRankClass = isTen ? 'corner-rank ten' : 'corner-rank';
+
+  let inner = '';
+  if (['J', 'Q', 'K'].includes(rank)) {
+    // Face card
+    const figureSymbols = { J: '\u265E', Q: '\u265B', K: '\u265A' }; // chess knight, queen, king
+    inner = `<div class="card-figure">
+      <span class="figure-symbol">${figureSymbols[rank]}</span>
+      <span class="figure-suit">${sym}</span>
+    </div>`;
+  } else {
+    // Pip card
+    const layout = PIP_LAYOUTS[rank];
+    let pips = '';
+    for (const p of layout) {
+      const rotClass = p.rot ? ' pip-rot' : '';
+      const sizeClass = p.size === 'large' ? ' pip-ace' : '';
+      pips += `<span class="pip${rotClass}${sizeClass}" style="left:${p.x}%;top:${p.y}%">${sym}</span>`;
+    }
+    inner = `<div class="card-pips">${pips}</div>`;
+  }
+
   return `<div class="card-face ${color} ${extraClass}">
-    <span class="card-rank">${rank}</span>
-    <span class="card-suit-top">${sym}</span>
-    <span class="card-suit-center">${sym}</span>
-    <span class="card-rank-bottom">${rank}</span>
+    <span class="card-corner top-left">
+      <span class="${cornerRankClass}">${rank}</span>
+      <span class="corner-suit">${sym}</span>
+    </span>
+    ${inner}
+    <span class="card-corner bottom-right">
+      <span class="${cornerRankClass}">${rank}</span>
+      <span class="corner-suit">${sym}</span>
+    </span>
   </div>`;
 }
 
-function cardBackHTML(small = false) {
+function cardBackHTML() {
   return `<div class="card-back-design"><div class="card-back-inner">G</div></div>`;
 }
 
 function makeCardEl(card, isOwn, small = false) {
   const el = document.createElement('div');
   const sizeClass = small ? 'card card-sm' : 'card';
-
   if (card.faceUp) {
     el.className = sizeClass;
     el.innerHTML = cardFaceHTML(card.suit, card.rank);
   } else {
     el.className = `${sizeClass} card-back`;
-    el.innerHTML = cardBackHTML(small);
+    el.innerHTML = cardBackHTML();
   }
   el.dataset.cardId = card.id;
   return el;
@@ -60,20 +101,18 @@ function showToast(message, type = 'info') {
   setTimeout(() => toast.remove(), 3500);
 }
 
-// --- Peek Popup (temporary card reveal) ---
+// --- Peek Popup ---
 function showPeekPopup(suit, rank) {
   const popup = document.createElement('div');
   popup.className = 'peek-popup';
   popup.innerHTML = `
     <div class="peek-popup-inner">
       <div class="peek-popup-label">Memorize this card!</div>
-      <div class="card" style="width:90px;height:125px">${cardFaceHTML(suit, rank)}</div>
+      <div class="card" style="width:90px;height:126px">${cardFaceHTML(suit, rank)}</div>
       <div class="peek-popup-timer-bar"><div class="peek-popup-timer-fill"></div></div>
     </div>
   `;
   document.body.appendChild(popup);
-
-  // Auto-dismiss after 3 seconds
   setTimeout(() => {
     popup.classList.add('fading');
     setTimeout(() => popup.remove(), 400);
@@ -97,7 +136,6 @@ function startTimerDisplay(deadline) {
   const el = $('#turn-timer-display');
   if (!el) return;
   el.classList.remove('hidden');
-
   function tick() {
     const remaining = Math.max(0, Math.ceil((state.turnDeadline - Date.now()) / 1000));
     el.textContent = remaining + 's';
@@ -113,10 +151,7 @@ function startTimerDisplay(deadline) {
   state.timerInterval = setInterval(tick, 250);
 }
 
-socket.on('turn-timer', ({ deadline }) => {
-  startTimerDisplay(deadline);
-});
-
+socket.on('turn-timer', ({ deadline }) => startTimerDisplay(deadline));
 socket.on('timer-setting', ({ duration }) => {
   const sel = $('#timer-select');
   if (sel) sel.value = duration;
@@ -136,11 +171,8 @@ $('#btn-join').addEventListener('click', () => {
   socket.emit('join-room', { code, playerName: name });
 });
 
-$('#btn-start').addEventListener('click', () => {
-  socket.emit('start-game');
-});
+$('#btn-start').addEventListener('click', () => socket.emit('start-game'));
 
-// Enter key support
 ['#create-name', '#join-code', '#join-name'].forEach(sel => {
   $(sel).addEventListener('keydown', (e) => {
     if (e.key === 'Enter') {
@@ -150,7 +182,6 @@ $('#btn-start').addEventListener('click', () => {
   });
 });
 
-// Timer setting
 $('#timer-select').addEventListener('change', (e) => {
   socket.emit('set-timer', { duration: parseInt(e.target.value) });
 });
@@ -174,6 +205,7 @@ socket.on('room-joined', ({ code, playerIndex }) => {
   $('#room-code').textContent = code;
   if (playerIndex === 0) {
     $('#btn-start').classList.remove('hidden');
+    $('#timer-setting').classList.remove('hidden');
     $('#lobby-info').textContent = 'Waiting for players (3-7)...';
   }
 });
@@ -209,6 +241,8 @@ socket.on('back-to-lobby', () => {
   $('#lobby-create').classList.add('hidden');
   $('#lobby-room').classList.remove('hidden');
   $('#gameover-overlay').classList.add('hidden');
+  $('#gandalf-banner').classList.add('hidden');
+  $('#gandalf-overlay').classList.add('hidden');
 });
 
 // --- Game State ---
@@ -223,10 +257,14 @@ socket.on('game-state', (gs) => {
 });
 
 socket.on('initial-peek', ({ cards }) => {
-  // Show peek overlay
   const overlay = $('#peek-overlay');
   const container = $('#peek-cards');
+  const labels = $('#peek-labels');
   container.innerHTML = '';
+  labels.innerHTML = '';
+
+  // Sort by index to ensure left card is on the left
+  cards.sort((a, b) => a.index - b.index);
 
   cards.forEach(c => {
     const el = document.createElement('div');
@@ -235,6 +273,9 @@ socket.on('initial-peek', ({ cards }) => {
     container.appendChild(el);
   });
 
+  // Add position labels
+  labels.innerHTML = '<span class="peek-label">Left Edge</span><span class="peek-label">Right Edge</span>';
+
   overlay.classList.remove('hidden');
   $('#btn-peek-done').addEventListener('click', () => {
     overlay.classList.add('hidden');
@@ -242,22 +283,20 @@ socket.on('initial-peek', ({ cards }) => {
 });
 
 socket.on('card-knowledge', ({ cardId, suit, rank }) => {
-  // Show a brief peek popup - player must memorize the card
   showPeekPopup(suit, rank);
 });
 
 socket.on('card-replaced', ({ playerIndex, cardIndex, discardedCard, newCardId }) => {
-  // Card replacement is visible via discard; new card identity is sent via card-knowledge
+  // Visual feedback handled by game-state update
 });
 
 socket.on('peek-animation', ({ playerIndex, cardIndex, peekerIndex }) => {
-  // Flash the peeked card position
   setTimeout(() => {
     const allCards = $$('.card[data-player-index][data-card-index]');
     allCards.forEach(el => {
       if (parseInt(el.dataset.playerIndex) === playerIndex && parseInt(el.dataset.cardIndex) === cardIndex) {
-        el.classList.add('peek-highlight');
-        setTimeout(() => el.classList.remove('peek-highlight'), 700);
+        el.classList.add('peek-flip');
+        setTimeout(() => el.classList.remove('peek-flip'), 900);
       }
     });
   }, 100);
@@ -271,13 +310,12 @@ socket.on('peek-animation', ({ playerIndex, cardIndex, peekerIndex }) => {
 });
 
 socket.on('cards-switched', ({ p1, c1, p2, c2, switcherIndex }) => {
-  // Cards were switched - players must remember where cards went
+  // Handled by game-state update
 });
 
 socket.on('tack-reveal', ({ card1, card2, tackerIndex }) => {
   const gs = state.gameState;
   const tackerName = gs ? gs.players[tackerIndex].name : 'Someone';
-
   if (card1.rank === card2.rank) {
     showToast(`TACK! ${tackerName} matched ${card1.rank}s!`, 'success');
   } else {
@@ -285,9 +323,30 @@ socket.on('tack-reveal', ({ card1, card2, tackerIndex }) => {
   }
 });
 
-socket.on('notification', ({ message, type }) => {
-  showToast(message, type);
+socket.on('tack-glow', ({ playerIndex, cardIndex, tackerIndex }) => {
+  setTimeout(() => {
+    const allCards = $$('.card[data-player-index][data-card-index]');
+    allCards.forEach(el => {
+      if (parseInt(el.dataset.playerIndex) === playerIndex && parseInt(el.dataset.cardIndex) === cardIndex) {
+        el.classList.add('tack-glow-effect');
+        setTimeout(() => el.classList.remove('tack-glow-effect'), 2500);
+      }
+    });
+  }, 50);
 });
+
+socket.on('gandalf-called', ({ callerIndex, callerName }) => {
+  const overlay = $('#gandalf-overlay');
+  $('#gandalf-caller-text').textContent = `${callerName} called Gandalf!`;
+  overlay.classList.remove('hidden');
+  setTimeout(() => overlay.classList.add('hidden'), 3500);
+  // Show persistent banner
+  const banner = $('#gandalf-banner');
+  $('#gandalf-banner-text').textContent = `FINAL ROUND \u2014 ${callerName} called Gandalf`;
+  banner.classList.remove('hidden');
+});
+
+socket.on('notification', ({ message, type }) => showToast(message, type));
 
 socket.on('game-over', ({ scores }) => {
   const overlay = $('#gameover-overlay');
@@ -300,7 +359,7 @@ socket.on('game-over', ({ scores }) => {
     return `<div class="${cls}">
       <span class="rank-num">#${i + 1}</span>
       <span class="name">${s.name}</span>
-      <span class="score">${s.score}</span>
+      <span class="score">${s.score} pts</span>
     </div>`;
   }).join('');
 
@@ -308,11 +367,10 @@ socket.on('game-over', ({ scores }) => {
     $('#btn-play-again').classList.remove('hidden');
   }
   overlay.classList.remove('hidden');
+  $('#gandalf-banner').classList.add('hidden');
 });
 
-$('#btn-play-again').addEventListener('click', () => {
-  socket.emit('play-again');
-});
+$('#btn-play-again').addEventListener('click', () => socket.emit('play-again'));
 
 // --- Render ---
 function renderGame() {
@@ -328,7 +386,7 @@ function renderGame() {
   if (gs.phase === 'ended') {
     $('#turn-info').textContent = 'Game Over';
   } else if (gs.gandalfCallerIndex !== null) {
-    $('#turn-info').innerHTML = `<span style="color:#ce93d8">GANDALF called!</span> \u2022 ${currentName}'s turn`;
+    $('#turn-info').innerHTML = `<span class="gandalf-text">FINAL ROUND</span> \u2022 ${currentName}'s turn`;
   } else {
     $('#turn-info').textContent = isMyTurn ? 'Your turn!' : `${currentName}'s turn`;
   }
@@ -338,6 +396,7 @@ function renderGame() {
 
   // Center (deck + discard)
   $('#deck-count').textContent = gs.deckCount;
+  $('#discard-count').textContent = gs.discardCount || 0;
   renderDiscard(gs);
 
   // Your cards
@@ -349,7 +408,7 @@ function renderGame() {
   // Action bar
   renderActions(gs, myIdx, isMyTurn);
 
-  // Timer - sync from game state if we missed the event
+  // Timer sync
   if (gs.turnDeadline && gs.turnDeadline > Date.now() && !state.timerInterval) {
     startTimerDisplay(gs.turnDeadline);
   } else if (!gs.turnDeadline) {
@@ -360,20 +419,20 @@ function renderGame() {
 function renderOpponents(gs, myIdx) {
   const container = $('#opponents');
   container.innerHTML = '';
-
-  // Order players: starting from myIdx+1 going clockwise
   const n = gs.players.length;
+
   for (let offset = 1; offset < n; offset++) {
     const pi = (myIdx + offset) % n;
     const p = gs.players[pi];
 
     const div = document.createElement('div');
     div.className = 'opponent';
-    if (pi === gs.currentPlayerIndex && gs.phase === 'playing') div.classList.add('active');
+    if (pi === gs.currentPlayerIndex && gs.phase === 'playing') div.classList.add('active-player');
     if (pi === gs.gandalfCallerIndex) div.classList.add('gandalf-caller');
 
     const label = document.createElement('div');
-    label.className = 'player-label';
+    label.className = 'player-label opp-label';
+    if (pi === gs.currentPlayerIndex && gs.phase === 'playing') label.classList.add('current-turn');
     label.textContent = p.name;
     div.appendChild(label);
 
@@ -384,13 +443,10 @@ function renderOpponents(gs, myIdx) {
       const cardEl = makeCardEl(card, false, true);
       cardEl.dataset.playerIndex = pi;
       cardEl.dataset.cardIndex = ci;
-
-      // Make selectable in tack/switch/peek modes
       if (isCardSelectable(gs, pi, ci, false)) {
         cardEl.classList.add('selectable');
         cardEl.addEventListener('click', () => onCardClick(pi, ci));
       }
-
       cardsDiv.appendChild(cardEl);
     });
 
@@ -402,10 +458,9 @@ function renderOpponents(gs, myIdx) {
 function renderDiscard(gs) {
   const pile = $('#discard-pile');
   if (gs.topDiscard) {
-    pile.innerHTML = `<div class="card" style="position:absolute">${cardFaceHTML(gs.topDiscard.suit, gs.topDiscard.rank)}</div>
-      <span class="area-label" style="position:absolute;bottom:-22px">Discard</span>`;
+    pile.innerHTML = `<div class="card" style="position:absolute">${cardFaceHTML(gs.topDiscard.suit, gs.topDiscard.rank)}</div>`;
   } else {
-    pile.innerHTML = '<span class="area-label">Discard</span>';
+    pile.innerHTML = '';
   }
 }
 
@@ -415,20 +470,19 @@ function renderYourCards(gs, myIdx, isMyTurn) {
   container.innerHTML = '';
 
   const label = $('#your-label');
-  label.textContent = player.name + (myIdx === gs.gandalfCallerIndex ? ' (GANDALF)' : '');
+  label.textContent = player.name;
   label.className = 'player-label you-label';
-  if (isMyTurn) label.classList.add('active-turn');
+  if (isMyTurn) label.classList.add('current-turn');
+  if (myIdx === gs.gandalfCallerIndex) label.textContent += ' (GANDALF)';
 
   player.cards.forEach((card, ci) => {
     const cardEl = makeCardEl(card, true, false);
     cardEl.dataset.playerIndex = myIdx;
     cardEl.dataset.cardIndex = ci;
-
     if (isCardSelectable(gs, myIdx, ci, true)) {
       cardEl.classList.add('selectable');
       cardEl.addEventListener('click', () => onCardClick(myIdx, ci));
     }
-
     container.appendChild(cardEl);
   });
 }
@@ -437,44 +491,33 @@ function isCardSelectable(gs, pi, ci, isOwn) {
   const myIdx = gs.yourIndex;
   const isMyTurn = gs.currentPlayerIndex === myIdx && gs.phase === 'playing';
   if (!isMyTurn) return false;
-
-  // Replace mode: can click own cards
   if (gs.turnPhase === 'drawn' && gs.drawnCard && isOwn) return true;
-
-  // Peek self: own cards only
   if (gs.turnPhase === 'special-peek-self' && isOwn) return true;
-
-  // Peek other: opponent cards only
   if (gs.turnPhase === 'special-peek-other' && !isOwn) return true;
-
-  // Switch: any card
   if (gs.turnPhase === 'special-switch') return true;
-
-  // Tack selection: any card (handled via tack overlay)
   if (state.tackSelection.length > 0 && state.tackSelection.length < 2) return true;
-
   return false;
 }
 
 function onCardClick(pi, ci) {
   const gs = state.gameState;
   if (!gs) return;
-
   const myIdx = gs.yourIndex;
 
   // Tack mode
-  if (state.tackSelection.length > 0 || gs.turnPhase === 'choose-action') {
-    if (state.tackSelection.length > 0 && state.tackSelection.length < 2) {
-      // Don't allow selecting the same card twice
-      if (state.tackSelection[0].playerIndex === pi && state.tackSelection[0].cardIndex === ci) return;
-
-      state.tackSelection.push({ playerIndex: pi, cardIndex: ci });
-      const s = state.tackSelection;
+  if (state.tackSelection.length > 0 && state.tackSelection.length < 2) {
+    if (state.tackSelection[0].playerIndex === pi && state.tackSelection[0].cardIndex === ci) return;
+    state.tackSelection.push({ playerIndex: pi, cardIndex: ci });
+    // Broadcast second card glow
+    socket.emit('tack-select', { playerIndex: pi, cardIndex: ci });
+    const s = state.tackSelection;
+    setTimeout(() => {
       socket.emit('tack', { p1: s[0].playerIndex, c1: s[0].cardIndex, p2: s[1].playerIndex, c2: s[1].cardIndex });
       state.tackSelection = [];
       $('#tack-overlay').classList.add('hidden');
-      return;
-    }
+      $$('.card.selectable').forEach(c => c.classList.remove('selectable', 'selected'));
+    }, 300);
+    return;
   }
 
   // Replace card with drawn card
@@ -504,7 +547,6 @@ function onCardClick(pi, ci) {
       state.switchSelection = [];
       $('#switch-overlay').classList.add('hidden');
     } else {
-      // Highlight selected card
       renderGame();
     }
     return;
@@ -520,25 +562,30 @@ function renderDrawnCard(gs, isMyTurn) {
 
   area.classList.remove('hidden');
   const card = gs.drawnCard;
-  const sym = SUIT_SYMBOLS[card.suit];
-  const color = SUIT_COLORS[card.suit];
 
   $('#drawn-card-display').innerHTML =
-    `<div class="card">${cardFaceHTML(card.suit, card.rank)}</div>
-     <div style="font-size:0.8rem;color:rgba(250,248,240,0.5);margin-top:4px">You drew this card</div>`;
+    `<div class="card drawn-card-lg">${cardFaceHTML(card.suit, card.rank)}</div>
+     <div class="drawn-subtitle">You drew this card</div>`;
 
-  // Action buttons based on card rank
-  let buttons = `<button class="btn btn-outline btn-sm" onclick="doDiscard()">Discard</button>`;
+  let buttons = '';
+  buttons += `<button class="btn btn-outline btn-sm" onclick="doDiscard()">Discard</button>`;
   buttons += `<button class="btn btn-gold btn-sm" onclick="doReplace()">Replace a Card</button>`;
 
+  // Ability button based on rank
   if (['7', '8'].includes(card.rank)) {
-    buttons += `<button class="btn btn-outline btn-sm" onclick="doPeekSelf()">Peek at Own Card</button>`;
+    buttons += `<button class="btn btn-ability btn-sm" onclick="doPeekSelf()">See One of Your Cards</button>`;
   }
   if (['9', '10'].includes(card.rank)) {
-    buttons += `<button class="btn btn-outline btn-sm" onclick="doPeekOther()">Peek at Opponent's Card</button>`;
+    buttons += `<button class="btn btn-ability btn-sm" onclick="doPeekOther()">See an Opponent's Card</button>`;
   }
   if (card.rank === 'J') {
-    buttons += `<button class="btn btn-outline btn-sm" onclick="doSwitch()">Switch Two Cards</button>`;
+    buttons += `<button class="btn btn-ability btn-sm" onclick="doSwitch()">Switch Two Cards</button>`;
+  }
+  if (card.rank === 'Q') {
+    buttons += `<button class="btn btn-ability btn-sm" onclick="doSkipNext()">Skip Next Player</button>`;
+  }
+  if (card.rank === 'K') {
+    buttons += `<button class="btn btn-ability btn-sm" onclick="doDrawAgain()">Draw Again</button>`;
   }
 
   $('#drawn-actions').innerHTML = buttons;
@@ -563,46 +610,38 @@ function renderActions(gs, myIdx, isMyTurn) {
 
   if (gs.turnPhase === 'choose-action') {
     buttons.innerHTML = `
-      <button class="btn btn-gold" id="btn-draw">Draw Card</button>
-      <button class="btn btn-outline" id="btn-tack">TACK</button>
-      <button class="btn btn-danger btn-sm" id="btn-gandalf" ${gs.gandalfCallerIndex !== null ? 'disabled style="opacity:0.4"' : ''}>GANDALF</button>
+      <button class="btn btn-gold" id="btn-draw">Draw</button>
+      <button class="btn btn-outline" id="btn-tack">Tack</button>
+      <button class="btn btn-gandalf-btn btn-sm" id="btn-gandalf" ${gs.gandalfCallerIndex !== null ? 'disabled style="opacity:0.4"' : ''}>Gandalf</button>
     `;
-    $('#btn-draw').addEventListener('click', () => {
-      socket.emit('draw-card');
-    });
+    $('#btn-draw').addEventListener('click', () => socket.emit('draw-card'));
     $('#btn-tack').addEventListener('click', () => {
-      state.tackSelection = []; // Reset
-      // Wait for first card click - show overlay
+      state.tackSelection = [];
       $('#tack-overlay').classList.remove('hidden');
-      // Make all cards selectable
       startTackMode();
     });
     if (gs.gandalfCallerIndex === null) {
       $('#btn-gandalf').addEventListener('click', () => {
-        if (confirm('Are you sure you want to call GANDALF? One more round and the game ends!')) {
+        if (confirm('Call GANDALF? Everyone gets one more turn, then the game ends!')) {
           socket.emit('call-gandalf');
         }
       });
     }
     message.textContent = 'Your turn! Choose an action.';
   } else if (gs.turnPhase === 'drawn') {
-    message.textContent = 'You drew a card. Choose what to do with it.';
+    message.textContent = 'You drew a card. Choose what to do.';
   } else if (gs.turnPhase === 'special-peek-self') {
     message.textContent = 'Click one of your cards to peek at it.';
   } else if (gs.turnPhase === 'special-peek-other') {
     message.textContent = "Click an opponent's card to peek at it.";
   } else if (gs.turnPhase === 'special-switch') {
-    message.textContent = `Click two cards to switch them. (${state.switchSelection.length}/2 selected)`;
+    message.textContent = `Click two cards to switch. (${state.switchSelection.length}/2 selected)`;
     $('#switch-overlay').classList.remove('hidden');
   }
 }
 
 function startTackMode() {
-  state.tackSelection = [{length: 0}]; // Placeholder to trigger selectable rendering
-  state.tackSelection = []; // Reset properly
-  // We need to make cards selectable - trigger re-render with tack state
-  // Actually we handle this by checking tackSelection in isCardSelectable
-  // For now just manually add selectable class to all cards
+  state.tackSelection = [];
   const allCards = $$('#opponents .card, #your-cards .card');
   allCards.forEach(el => {
     el.classList.add('selectable');
@@ -613,14 +652,16 @@ function startTackMode() {
         state.tackSelection.push({ playerIndex: pi, cardIndex: ci });
         el.classList.add('selected');
         el.removeEventListener('click', handler);
-
+        // Broadcast glow to all players
+        socket.emit('tack-select', { playerIndex: pi, cardIndex: ci });
         if (state.tackSelection.length === 2) {
           const s = state.tackSelection;
-          socket.emit('tack', { p1: s[0].playerIndex, c1: s[0].cardIndex, p2: s[1].playerIndex, c2: s[1].cardIndex });
-          state.tackSelection = [];
-          $('#tack-overlay').classList.add('hidden');
-          // Remove selectable from all
-          $$('.card.selectable').forEach(c => c.classList.remove('selectable', 'selected'));
+          setTimeout(() => {
+            socket.emit('tack', { p1: s[0].playerIndex, c1: s[0].cardIndex, p2: s[1].playerIndex, c2: s[1].cardIndex });
+            state.tackSelection = [];
+            $('#tack-overlay').classList.add('hidden');
+            $$('.card.selectable').forEach(c => c.classList.remove('selectable', 'selected'));
+          }, 400);
         }
       }
     });
@@ -634,7 +675,7 @@ $('#btn-cancel-tack').addEventListener('click', () => {
   renderGame();
 });
 
-// --- Deck click handler ---
+// Deck click
 $('#deck').addEventListener('click', () => {
   const gs = state.gameState;
   if (!gs) return;
@@ -644,10 +685,9 @@ $('#deck').addEventListener('click', () => {
   socket.emit('draw-card');
 });
 
-// --- Global action functions (called from rendered buttons) ---
+// --- Global action functions ---
 window.doDiscard = () => socket.emit('discard-drawn');
 window.doReplace = () => {
-  // Just inform user to click a card
   $('#action-message').textContent = 'Click one of your cards to replace it.';
 };
 window.doPeekSelf = () => socket.emit('use-peek-self');
@@ -656,3 +696,5 @@ window.doSwitch = () => {
   state.switchSelection = [];
   socket.emit('use-switch');
 };
+window.doSkipNext = () => socket.emit('use-skip-next');
+window.doDrawAgain = () => socket.emit('use-draw-again');

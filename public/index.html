@@ -2,10 +2,10 @@
 <html lang="en">
 <head>
   <meta charset="UTF-8">
-  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
   <title>Gandalf</title>
   <link rel="stylesheet" href="style.css">
-  <link href="https://fonts.googleapis.com/css2?family=Cinzel:wght@400;600;700&family=Inter:wght@300;400;500;600&display=swap" rel="stylesheet">
+  <link href="https://fonts.googleapis.com/css2?family=Cinzel:wght@400;600;700;900&family=Inter:wght@300;400;500;600&display=swap" rel="stylesheet">
 </head>
 <body>
   <div id="app">
@@ -57,6 +57,11 @@
         <div id="turn-info"></div>
       </div>
 
+      <!-- Gandalf Final Round Banner -->
+      <div id="gandalf-banner" class="hidden">
+        <span id="gandalf-banner-text">FINAL ROUND</span>
+      </div>
+
       <div id="table">
         <div id="opponents"></div>
         <div id="center-area">
@@ -65,13 +70,19 @@
               <div class="card-back-design">
                 <div class="card-back-inner">G</div>
               </div>
-              <span id="deck-count" class="badge"></span>
             </div>
-            <span class="area-label">Deck</span>
+            <div class="pile-info">
+              <span class="area-label">Deck</span>
+              <span id="deck-count" class="pile-count"></span>
+            </div>
           </div>
           <div id="discard-area">
             <div id="discard-pile" class="card-slot">
               <span class="area-label">Discard</span>
+            </div>
+            <div class="pile-info">
+              <span class="area-label">Discard</span>
+              <span id="discard-count" class="pile-count"></span>
             </div>
           </div>
         </div>
@@ -98,6 +109,7 @@
           <h2>Your Edge Cards</h2>
           <p>Memorize these before the game starts!</p>
           <div id="peek-cards"></div>
+          <div id="peek-labels"></div>
           <button id="btn-peek-done" class="btn btn-gold">I've Memorized Them</button>
         </div>
       </div>
@@ -111,6 +123,16 @@
       <!-- Switch Selection Overlay -->
       <div id="switch-overlay" class="hidden">
         <div class="tack-banner">Select two cards to switch (click cards on the table)</div>
+      </div>
+
+      <!-- Gandalf Called Overlay -->
+      <div id="gandalf-overlay" class="hidden">
+        <div class="gandalf-called-content">
+          <div class="gandalf-called-icon">🧙</div>
+          <h2>GANDALF!</h2>
+          <p id="gandalf-caller-text"></p>
+          <p class="gandalf-sub">Final Round — everyone gets one more turn!</p>
+        </div>
       </div>
 
       <!-- Game Over Overlay -->
