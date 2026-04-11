@@ -320,6 +320,7 @@ io.on('connection', (socket) => {
     room.drawnCard = card;
     room.turnPhase = 'drawn';
     room.message = `${room.players[socket.playerIndex].name} drew a card`;
+    io.to(room.code).emit('draw-animation', { playerIndex: socket.playerIndex });
     broadcastState(room);
   });
 
@@ -364,6 +365,11 @@ io.on('connection', (socket) => {
     const card = room.drawnCard;
     card.faceUp = true;
     room.discardPile.push(card);
+
+    io.to(room.code).emit('discard-animation', {
+      playerIndex: socket.playerIndex,
+      card: { suit: card.suit, rank: card.rank },
+    });
 
     io.to(room.code).emit('notification', {
       message: `${room.players[socket.playerIndex].name} discarded ${card.rank} of ${card.suit}`,
@@ -637,6 +643,14 @@ io.on('connection', (socket) => {
       cardIndex,
       tackerIndex: socket.playerIndex,
     });
+  });
+
+  socket.on('tack-deselect', ({ playerIndex, cardIndex }) => {
+    const room = rooms.get(socket.roomCode);
+    if (!room || room.phase !== 'playing') return;
+    if (room.currentPlayerIndex !== socket.playerIndex) return;
+
+    io.to(room.code).emit('tack-unglow', { playerIndex, cardIndex });
   });
 
   socket.on('call-gandalf', () => {
