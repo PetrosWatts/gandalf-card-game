@@ -1,0 +1,133 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Gandalf</title>
+  <link rel="stylesheet" href="style.css">
+  <link href="https://fonts.googleapis.com/css2?family=Cinzel:wght@400;600;700&family=Inter:wght@300;400;500;600&display=swap" rel="stylesheet">
+</head>
+<body>
+  <div id="app">
+
+    <!-- LOBBY -->
+    <div id="lobby">
+      <div class="lobby-card">
+        <h1 class="logo">Gandalf</h1>
+        <p class="subtitle">The Card Game</p>
+
+        <div id="lobby-create" class="lobby-section">
+          <input type="text" id="create-name" placeholder="Your name" maxlength="12" autocomplete="off">
+          <button id="btn-create" class="btn btn-gold">Create Room</button>
+          <div class="divider"><span>or</span></div>
+          <input type="text" id="join-code" placeholder="Room code" maxlength="4" autocomplete="off" style="text-transform:uppercase">
+          <input type="text" id="join-name" placeholder="Your name" maxlength="12" autocomplete="off">
+          <button id="btn-join" class="btn btn-outline">Join Room</button>
+        </div>
+
+        <div id="lobby-room" class="lobby-section hidden">
+          <div class="room-code-display">
+            <span class="label">Room Code</span>
+            <span id="room-code" class="code"></span>
+          </div>
+          <div id="player-list"></div>
+          <div id="timer-setting" class="timer-setting hidden">
+            <label class="timer-label">Turn Timer</label>
+            <select id="timer-select" class="timer-select">
+              <option value="0">Off</option>
+              <option value="15">15 seconds</option>
+              <option value="30">30 seconds</option>
+              <option value="45">45 seconds</option>
+              <option value="60">1 minute</option>
+            </select>
+          </div>
+          <button id="btn-start" class="btn btn-gold hidden">Start Game</button>
+          <p id="lobby-info" class="info-text">Waiting for host to start...</p>
+        </div>
+
+        <p id="lobby-error" class="error-text"></p>
+      </div>
+    </div>
+
+    <!-- GAME -->
+    <div id="game" class="hidden">
+      <div id="game-header">
+        <div id="room-info"></div>
+        <div id="turn-timer-display" class="turn-timer-display hidden"></div>
+        <div id="turn-info"></div>
+      </div>
+
+      <div id="table">
+        <div id="opponents"></div>
+        <div id="center-area">
+          <div id="deck-area">
+            <div id="deck" class="card card-back clickable" title="Draw from deck">
+              <div class="card-back-design">
+                <div class="card-back-inner">G</div>
+              </div>
+              <span id="deck-count" class="badge"></span>
+            </div>
+            <span class="area-label">Deck</span>
+          </div>
+          <div id="discard-area">
+            <div id="discard-pile" class="card-slot">
+              <span class="area-label">Discard</span>
+            </div>
+          </div>
+        </div>
+
+        <div id="drawn-card-area" class="hidden">
+          <div id="drawn-card-display"></div>
+          <div id="drawn-actions"></div>
+        </div>
+
+        <div id="your-area">
+          <div id="your-label" class="player-label you-label"></div>
+          <div id="your-cards"></div>
+        </div>
+      </div>
+
+      <div id="action-bar">
+        <div id="action-buttons"></div>
+        <div id="action-message"></div>
+      </div>
+
+      <!-- Initial Peek Overlay -->
+      <div id="peek-overlay" class="hidden">
+        <div class="peek-content">
+          <h2>Your Edge Cards</h2>
+          <p>Memorize these before the game starts!</p>
+          <div id="peek-cards"></div>
+          <button id="btn-peek-done" class="btn btn-gold">I've Memorized Them</button>
+        </div>
+      </div>
+
+      <!-- Tack Selection Overlay -->
+      <div id="tack-overlay" class="hidden">
+        <div class="tack-banner">Select two cards to TACK (click cards on the table)</div>
+        <button id="btn-cancel-tack" class="btn btn-outline btn-sm">Cancel</button>
+      </div>
+
+      <!-- Switch Selection Overlay -->
+      <div id="switch-overlay" class="hidden">
+        <div class="tack-banner">Select two cards to switch (click cards on the table)</div>
+      </div>
+
+      <!-- Game Over Overlay -->
+      <div id="gameover-overlay" class="hidden">
+        <div class="gameover-content">
+          <h2>Game Over</h2>
+          <div id="scoreboard"></div>
+          <button id="btn-play-again" class="btn btn-gold hidden">Play Again</button>
+        </div>
+      </div>
+
+      <!-- Notification Toast -->
+      <div id="toast-container"></div>
+    </div>
+  </div>
+
+  <script src="/socket.io/socket.io.js"></script>
+  <script src="game.js"></script>
+</body>
+</html>
