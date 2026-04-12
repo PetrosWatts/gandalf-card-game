@@ -241,6 +241,25 @@ io.on('connection', (socket) => {
   socket.on('join-room', ({ code, playerName }) => {
     const room = rooms.get(code);
     if (!room) return socket.emit('error-msg', { message: 'Room not found' });
+
+    // Check if this is a rejoin (same name, disconnected player)
+    const rejoinIdx = room.players.findIndex(p => p.name === playerName && !p.connected);
+    if (rejoinIdx >= 0) {
+      // Rejoin existing player
+      room.players[rejoinIdx].socketId = socket.id;
+      room.players[rejoinIdx].connected = true;
+      socket.join(code);
+      socket.roomCode = code;
+      socket.playerIndex = rejoinIdx;
+      socket.emit('room-joined', { code, playerIndex: rejoinIdx });
+      io.to(code).emit('lobby-update', { players: room.players.map(p => ({ name: p.name, connected: p.connected })) });
+      io.to(code).emit('notification', { message: `${playerName} rejoined!`, type: 'success' });
+      if (room.phase === 'playing' || room.phase === 'ended') {
+        broadcastState(room);
+      }
+      return;
+    }
+
     if (room.phase !== 'waiting') return socket.emit('error-msg', { message: 'Game already started' });
     if (room.players.length >= 7) return socket.emit('error-msg', { message: 'Room is full (max 7)' });
     if (room.players.some(p => p.name === playerName)) return socket.emit('error-msg', { message: 'Name already taken' });
@@ -339,6 +358,13 @@ io.on('connection', (socket) => {
 
     const newCard = { ...room.drawnCard, faceUp: false };
     player.cards[cardIndex] = newCard;
+
+    // Animate: old card flips and flies to discard (visible to all)
+    io.to(room.code).emit('replace-animation', {
+      playerIndex: socket.playerIndex,
+      cardIndex,
+      oldCard: { suit: oldCard.suit, rank: oldCard.rank },
+    });
 
     // Notify everyone about the replacement
     io.to(room.code).emit('card-replaced', {
@@ -674,6 +700,29 @@ io.on('connection', (socket) => {
     });
 
     advanceTurn(room, false);
+  });
+
+  socket.on('exit-game', () => {
+    const room = rooms.get(socket.roomCode);
+    if (!room) return;
+    const player = room.players.find(p => p.socketId === socket.id);
+    if (player) {
+      player.connected = false;
+      player.socketId = null;
+      socket.leave(socket.roomCode);
+      io.to(room.code).emit('lobby-update', { players: room.players.map(p => ({ name: p.name, connected: p.connected })) });
+      io.to(room.code).emit('notification', { message: `${player.name} left the game`, type: 'warning' });
+
+      // If it was their turn, advance
+      if (room.phase === 'playing' && room.currentPlayerIndex === socket.playerIndex) {
+        if (room.drawnCard) {
+          room.drawnCard.faceUp = true;
+          room.discardPile.push(room.drawnCard);
+          room.drawnCard = null;
+        }
+        advanceTurn(room, false);
+      }
+    }
   });
 
   socket.on('disconnect', () => {

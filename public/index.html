@@ -53,7 +53,10 @@
     <div id="game" class="hidden">
       <div id="game-header">
         <div id="room-info"></div>
-        <div id="turn-timer-display" class="turn-timer-display hidden"></div>
+        <div style="display:flex;align-items:center;gap:8px">
+          <div id="turn-timer-display" class="turn-timer-display hidden"></div>
+          <button id="btn-exit-game" class="btn-exit">Exit</button>
+        </div>
         <div id="turn-info"></div>
       </div>
 
@@ -70,9 +73,7 @@
         <div id="center-area">
           <div id="deck-area">
             <div id="deck" class="card card-back clickable" title="Draw from deck">
-              <div class="card-back-design">
-                <div class="card-back-inner">G</div>
-              </div>
+              <div class="cb-design"><div class="cb-letter">G</div></div>
             </div>
             <div class="pile-info">
               <span class="area-label">Deck</span>
